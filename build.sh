@@ -1,2 +1,2 @@
-gcc -Wall main.c -o fb -lraylib -lm
+gcc -Wall main.c StringViews.c -o fb -lraylib -lm
 ./fb
