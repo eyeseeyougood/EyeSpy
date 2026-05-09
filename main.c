@@ -20,9 +20,66 @@
 #define SELECTEDBG (Color){20, 100, 165, 255}
 #define SELECTEDFG (Color){0, 0, 40, 255}
 
+static char** selectedPaths;
+static int selectedPathCount;
+static int selectionAllocation;
+
 static char* currentDir;
 static int scrollAmountLeft = 0;
 static int addressScrollAmount = 0;
+
+bool IsPathSelected(char* path)
+{
+	for (int i = 0; i < selectedPathCount; i++)
+	{
+		if (EquateStrings(selectedPaths[i], path))
+		{
+			return true;
+		}
+	}
+
+	return false;
+}
+
+void SelectPath(char* path)
+{
+	// check if path is already in selection
+	if (IsPathSelected(path))
+		return;
+	
+	// if not already in selection, check if it is full;
+	if (selectedPathCount == selectionAllocation)
+	{
+		// if full we expand the allocation of the array by 1.5x;
+		selectionAllocation *= 1.5;
+
+		char** biggerMemory = realloc(selectedPaths, selectionAllocation * sizeof(char*));
+		selectedPaths = biggerMemory;
+	}
+
+	selectedPaths[selectedPathCount] = CopyString(path);
+	selectedPathCount++;
+}
+
+void DeselectPath(char* path)
+{
+	// check if selection is empty;
+	if (selectedPathCount == 0)
+		return;
+
+	for (int i = 0; i < selectedPathCount; i++)
+	{
+		if (EquateStrings(selectedPaths[i], path))
+		{
+			int remainingItems = selectedPathCount - i;
+
+			char* temp[remainingItems];
+			memcpy(temp, selectedPaths+i+1, remainingItems * sizeof(char*));
+			memcpy(selectedPaths+i, temp, remainingItems * sizeof(char*));
+			selectedPathCount--;
+		}
+	}
+}
 
 void BinPath(char* path)
 {
@@ -343,6 +400,12 @@ void DrawLeftPanel()
     	bg = mouseDown ? clickBG : bg;
     	col = mouseDown ? fileTextClickCol : col;
 
+    	if (IsPathSelected(fullpath))
+    	{
+    		bg = SELECTEDBG;
+    		col = SELECTEDFG;
+    	}
+
 
     	DrawRectangle(rect.x, rect.y, rect.width, rect.height, bg);
 
@@ -350,7 +413,6 @@ void DrawLeftPanel()
 
     	DrawText(finalText, rect.x+5, rect.y, textHeight, col);
 
-    	free(fullpath);
     	free(finalText);
 
     	if (IsMouseButtonReleased(0) && mouseOver)
@@ -361,7 +423,19 @@ void DrawLeftPanel()
     	{
     		HandleClick(de);
     	}
+    	else if (IsMouseButtonPressed(1) && mouseOver && !EquateStrings(de->d_name, ".."))
+    	{
+    		if (IsKeyDown(KEY_LEFT_SHIFT))
+    		{
+    			DeselectPath(fullpath);
+    		}
+    		else
+    		{
+    			SelectPath(fullpath);
+    		}
+    	}
 
+    	free(fullpath);
     }
 
     closedir(directory);
@@ -377,6 +451,10 @@ int main(void)
 	char* startPath = "/home/eyeseeyougood/Documents";
 	currentDir = malloc(strlen(startPath)+1);
 	strcpy(currentDir, startPath);
+
+	selectionAllocation = 2;
+	selectedPathCount = 0;
+	selectedPaths = malloc(selectionAllocation * sizeof(char*));
 
 	while (!WindowShouldClose())
 	{
