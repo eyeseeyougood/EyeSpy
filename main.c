@@ -3,7 +3,7 @@
 #include<stdlib.h>
 #include<raylib.h>
 #include<dirent.h>
-#include"StringViews.h"
+#include"StringFuncs.h"
 
 #define WIDTH 4*250
 #define HEIGHT 3*250
@@ -24,25 +24,21 @@ static char* currentDir;
 static int scrollAmountLeft = 0;
 static int addressScrollAmount = 0;
 
-static String* selectedPaths;
-static int selectedPathCounts;
-static int allocatedPathSpace;
-
-void BinPath(String* path)
+void BinPath(char* path)
 {
-	const char* filename = GetFileName(path->data);
+	const char* filename = GetFileName(path);
 
-    String* homeDir = NewString(getenv("HOME"));
+    char* homeDir = getenv("HOME");
 
-    String* trashPath = NewString(GetData(homeDir));
+    char* trashPath = CopyString(homeDir);
     AddData(trashPath, "/.local/share/Trash/files/");
     AddData(trashPath, filename);
 
-	int errCode = rename(GetData(path), GetData(trashPath));
+	int errCode = rename(path, trashPath);
 	if (errCode != 0)
 	{
-    	printf("Failed to bin: '%s'\n", GetData(path));
-    	printf("Tried to move to: '%s'\n", GetData(trashPath));
+    	printf("Failed to bin: '%s'\n", path);
+    	printf("Tried to move to: '%s'\n", trashPath);
         return;
     }
 }
@@ -51,11 +47,13 @@ void HandleClick(struct dirent* de)
 {
 	if (de->d_type == DT_DIR)
 	{
-		char* dir = malloc(256 + strlen(currentDir) * sizeof(char));
+		char* dir = malloc(256 + strlen(currentDir));
 		strcpy(dir, currentDir);
-		dir = strcat(dir, "/");
-		dir = strcat(dir, de->d_name);
+		strcat(dir, "/");
+		strcat(dir, de->d_name);
 		realpath(dir, dir);
+
+		free(currentDir);
 		currentDir = dir;
 
 		scrollAmountLeft = 0;
@@ -155,7 +153,7 @@ struct dirent** SortFiles(struct dirent** iNodes, int count)
 
 char* TrimAddress(char* address)
 {
-	char* result = malloc(strlen(address)*sizeof(char));
+	char* result = malloc((strlen(address)+1)*sizeof(char));
 
 	int addressLength = strlen(address);
 
@@ -186,14 +184,6 @@ char* TrimAddress(char* address)
 	return result;
 }
 
-void DeleteButton()
-{
-	for (int i = 0; i < selectedPathCounts; i++)
-	{
-		BinPath(&selectedPaths[i]);
-	}
-}
-
 Rectangle GetAddressPanelRect()
 {
 	Rectangle leftRect = GetLeftPanelRect();
@@ -218,7 +208,11 @@ void DrawAddressBar()
 	DrawRectangle(panelRect.x, panelRect.y, panelRect.width, panelRect.height, ADDRESSBGCOL);
 	DrawRectangle(panelRect.x+inset, panelRect.y+inset, panelRect.width-inset*2, panelRect.height-inset*2, BLACK);
 
-	DrawText(TrimAddress(currentDir), panelRect.x+8, 5+fontSize, fontSize, ADDRESSFGCOL);
+	char* trimmedAddress = TrimAddress(currentDir);
+
+	DrawText(trimmedAddress, panelRect.x+8, 5+fontSize, fontSize, ADDRESSFGCOL);
+
+	free(trimmedAddress);
 }
 
 char* TrimFileName(char* name)
@@ -247,10 +241,10 @@ char* TrimFileName(char* name)
 		return finalText;
 	}
 
-	int extSize = (EXTENSIONCHARLIMIT+1)*sizeof(char);
+	int extSize = EXTENSIONCHARLIMIT + 1;
 	char extension[extSize];
 	memset(extension, 0, extSize);
-	memcpy(extension, name+lastDotPosition, EXTENSIONCHARLIMIT * sizeof(char));
+	memcpy(extension, name+lastDotPosition, EXTENSIONCHARLIMIT);
 
 	strcat(finalText, "..");
 	strcat(finalText, extension);
@@ -258,18 +252,35 @@ char* TrimFileName(char* name)
 	return finalText;
 }
 
-void SelectPath(String* path)
+struct dirent** GetFilesFromDirectory(DIR* dir, char* directoryName, int* outFileCount)
 {
-	if (selectedPathCounts == allocatedPathSpace)
-	{
-		allocatedPathSpace *= 1.5;
-		String* newMemorySpace = realloc(selectedPaths, allocatedPathSpace * sizeof(String));
-		free(selectedPaths);
-		selectedPaths = newMemorySpace;
+	struct dirent *de;
+
+    if (dir == NULL)
+    {
+        printf("Could not open current directory");
+        return NULL;
+    }
+
+    uint fileCount = GetDirectoryFileCount(directoryName);
+    outFileCount[0] = fileCount;
+
+    struct dirent** unsortedFiles = malloc((fileCount+2) * sizeof(struct dirent*));
+    memset(unsortedFiles, 0, fileCount * sizeof(struct dirent*));
+
+    int i = 0;
+    while ((de = readdir(dir)) != NULL)
+    {
+    	if (strcmp(de->d_name, ".") == 0)
+    		continue;
+
+    	unsortedFiles[i] = de;
+    	i++;
 	}
 
-	selectedPaths[selectedPathCounts] = *path;
-	selectedPathCounts++;
+	struct dirent** sortedFiles = SortFiles(unsortedFiles, fileCount);
+
+	return sortedFiles;
 }
 
 void DrawLeftPanel()
@@ -295,34 +306,18 @@ void DrawLeftPanel()
 	Rectangle panelRect = GetLeftPanelRect();
 	DrawRectangle(panelRect.x, panelRect.y, panelRect.width, panelRect.height, panelBG);
 
-    struct dirent *de;
+	int fileCount = 0;
+	DIR* directory = opendir(currentDir);
+	struct dirent** sortedFiles = GetFilesFromDirectory(directory, currentDir, &fileCount);
 
-    DIR *dr = opendir(currentDir);
-
-    if (dr == NULL)
-    {
-        printf("Could not open current directory");
-        return;
-    }
-
-    struct dirent* unsortedFiles[10000*sizeof(struct dirent*)];
-    int fileCount = 0;
-    int i = 0;
-    while ((de = readdir(dr)) != NULL)
-    {
-    	if (strcmp(de->d_name, ".") == 0)
-    		continue;
-
-    	unsortedFiles[i] = de;
-    	fileCount++;
-    	i++;
-	}
-
-	struct dirent** sortedFiles = SortFiles(unsortedFiles, fileCount);
-
-	for (i = 0; i < fileCount; i++)
+	for (int i = 0; i < fileCount; i++)
 	{
 		struct dirent* de = sortedFiles[i];
+
+		char* cD = CopyString(currentDir);
+		char* cDWithSlash = AddData(cD, "/");
+		char* fullpath = AddData(cDWithSlash, de->d_name);
+
     	Rectangle rect = {
     		panelRect.x+textOffsetX,
     		panelRect.y+textOffsetY + i*(textHeight+padding),
@@ -348,19 +343,6 @@ void DrawLeftPanel()
     	bg = mouseDown ? clickBG : bg;
     	col = mouseDown ? fileTextClickCol : col;
 
-    	String* fullpath = NewString(currentDir);
-    	AddData(fullpath, "/");
-    	AddData(fullpath, de->d_name);
-
-
-    	for (int i = 0; i < selectedPathCounts; i++)
-    	{
-    		if (EquateStrings(fullpath, &(selectedPaths[i])))
-    		{
-    			bg = SELECTEDBG;
-    			col = SELECTEDFG;
-    		}
-    	}
 
     	DrawRectangle(rect.x, rect.y, rect.width, rect.height, bg);
 
@@ -368,34 +350,33 @@ void DrawLeftPanel()
 
     	DrawText(finalText, rect.x+5, rect.y, textHeight, col);
 
+    	free(fullpath);
     	free(finalText);
 
     	if (IsMouseButtonReleased(0) && mouseOver)
     	{
     		HandleClick(de);
     	}
-
-    	if (IsMouseButtonReleased(1) && mouseOver)
+    	else if (IsKeyPressed(KEY_ESCAPE) && EquateStrings(de->d_name, ".."))
     	{
-    		SelectPath(fullpath);
+    		HandleClick(de);
     	}
 
-    	DisposeString(fullpath);
     }
 
-    closedir(dr);
+    closedir(directory);
+    free(sortedFiles);
 }
 
 int main(void)
 {
 	InitWindow(WIDTH, HEIGHT, "The best file browser in the world!!!!");
 
-	currentDir = "/home/eyeseeyougood/Documents";
-	allocatedPathSpace = 20;
-	selectedPaths = malloc(allocatedPathSpace);
-	selectedPathCounts = 0;
+	SetExitKey(KEY_NULL);
 
-	SelectPath(NewString("/home/eyeseeyougood/Documents/BG.png"));
+	char* startPath = "/home/eyeseeyougood/Documents";
+	currentDir = malloc(strlen(startPath)+1);
+	strcpy(currentDir, startPath);
 
 	while (!WindowShouldClose())
 	{
