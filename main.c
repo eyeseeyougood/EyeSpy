@@ -13,12 +13,26 @@
 #define EXTENSIONCHARLIMIT 4
 
 #define COL(r,g,b) ((Color){r,g,b,255})
-#define ADDRESSBGCOL (Color){70, 30, 140, 255}
-#define ADDRESSFGCOL (Color){200, 50, 150, 255}
-#define LEFTPANELBGCOL (Color){24, 15, 24, 255}
-#define RIGHTPANELBGCOL (Color){30, 21, 30, 255}
-#define SELECTEDBG (Color){20, 100, 165, 255}
-#define SELECTEDFG (Color){0, 0, 40, 255}
+
+#define PALETTEPURPLE COL(75, 50, 100)
+#define PALETTELIGHTPURPLE COL(95, 70, 120)
+#define PALETTEDARKPURPLE COL(90, 60, 100)
+#define PALETTEDEEPPURPLE COL(24, 15, 24)
+#define PALETTEPINK COL(100, 50, 75)
+#define PALETTEBRIGHTPINK COL(200, 75, 125)
+#define PALETTELIGHTPINK COL(120, 70, 95)
+#define PALETTEDARKPINK COL(100, 60, 90)
+#define PALETTEDEEPPINK COL(100, 50, 75)
+
+#define PALETTEPURPLEBUTTON PALETTEPURPLE, PALETTEDARKPURPLE, PALETTELIGHTPURPLE
+#define PALETTEPINKBUTTON PALETTEPINK, PALETTEDARKPINK, PALETTELIGHTPINK
+
+#define ADDRESSBGCOL PALETTEDARKPINK
+#define ADDRESSFGCOL PALETTEBRIGHTPINK
+#define LEFTPANELBGCOL PALETTEDEEPPURPLE
+#define RIGHTPANELBGCOL COL(30, 21, 30)
+#define SELECTEDBG COL(20, 100, 165)
+#define SELECTEDFG COL(0, 0, 40)
 
 static char** selectedPaths;
 static int selectedPathCount;
@@ -87,9 +101,9 @@ void BinPath(char* path)
 
     char* homeDir = getenv("HOME");
 
-    char* trashPath = CopyString(homeDir);
-    AddData(trashPath, "/.local/share/Trash/files/");
-    AddData(trashPath, filename);
+    char* temp = CopyString(homeDir);
+    char* temp1 = AddData(temp, "/.local/share/Trash/files/");
+    char* trashPath = AddData(temp1, filename);
 
 	int errCode = rename(path, trashPath);
 	if (errCode != 0)
@@ -98,6 +112,16 @@ void BinPath(char* path)
     	printf("Tried to move to: '%s'\n", trashPath);
         return;
     }
+}
+
+void DeleteButtonClicked()
+{
+	int count = selectedPathCount;
+	for (int i = 0; i < count; i++)
+	{
+		BinPath(selectedPaths[0]);
+		DeselectPath(selectedPaths[0]);
+	}
 }
 
 void HandleClick(struct dirent* de)
@@ -142,7 +166,7 @@ void TextLabel(int x, int y, int width, int height, char* text, Color bg, Color 
 	DrawText(text, x+width/2 - textWidth/2+5, y+5, height-10, fg);
 }
 
-bool Button(int x, int y, int width, int height, char* text, Color bg, Color pressed, Color hover)
+bool Button(int x, int y, int width, int height, char* text, Color bg, Color pressed, Color hover, void(*action)(void))
 {
 	bool isOver = CheckCollisionPointRec(GetMousePosition(), (Rectangle){x,y,width,height});
 	bool isDown = isOver && IsMouseButtonDown(0);
@@ -151,6 +175,11 @@ bool Button(int x, int y, int width, int height, char* text, Color bg, Color pre
 	Color col = isDown ? pressed : (isOver ? hover : bg);
 
 	TextLabel(x, y, width, height, text, col, BLACK);
+
+	if (isDown && action != NULL)
+	{
+		action();
+	}
 
 	return isJustPressed;
 }
@@ -161,10 +190,10 @@ void DrawRightPanel()
 
 	DrawRectangle(rect.x, rect.y, rect.width, rect.height, RIGHTPANELBGCOL);
 
-	TextLabel(rect.x + 5, rect.y + 5, rect.width - 10, 40, "Eye Spy - by eyeseeyougood", COL(180, 50, 120), BLACK);
+	TextLabel(rect.x + 5, rect.y + 5, rect.width - 10, 40, "Eye Spy - by eyeseeyougood", PALETTEBRIGHTPINK, BLACK);
 
-	Button(rect.x + 5, rect.y + 60, rect.width/2-10, 40, "Delete", COL(140, 24, 25), COL(60, 10, 10), COL(160, 30, 15));
-	Button(rect.x + rect.width/2, rect.y + 60, rect.width/2-5, 40, "New File", COL(140, 24, 90), COL(130, 20, 80), COL(160, 30, 110));
+	Button(rect.x + 5, rect.y + 60, rect.width/2-10, 40, "Delete", PALETTEPURPLEBUTTON, &DeleteButtonClicked);
+	Button(rect.x + rect.width/2, rect.y + 60, rect.width/2-5, 40, "New File", PALETTEPINKBUTTON, NULL);
 }
 
 Rectangle GetLeftPanelRect()
